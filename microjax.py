@@ -6,8 +6,7 @@ library, one can,
 
 - Build a computation graph. (trace)
 - Register wrapper types for unwrapped values based on type(). (Box.register)
-- Build functions that can deal with wrapped values. (primitive,
-  notrace_primitive)
+- Build functions that can deal with wrapped values. (primitive)
 - Box values. (new_box)
 """
 
@@ -135,32 +134,6 @@ def primitive(f_raw):
             return new_box(ans, trace_id, node)
         else:
             return f_raw(*args, **kwargs)
-
-    return f_wrapped
-
-
-def notrace_primitive(f_raw):
-    """Wrap a raw numpy function by discarding boxes.
-
-    Results are not boxed. Unboxing is a signal that the f_raw() is
-    non-differentiable with respect to its arguments. Consider the computation,
-
-    ```
-    x = 1.5
-    y = np.floor(x) + x
-    ```
-
-    What is the derivative of y wrt x? Autograd says 1. as np.floor has zero
-    derivative near x=1.5.
-    """
-
-    def f_wrapped(*args, **kwargs):
-        # Extract np.ndarray values from boxed values.
-        argvals = map(getval, args)
-
-        # Call original function. Note that f_raw()'s arguments may still be
-        # boxed, but with a lower trace_id.
-        return f_raw(*argvals, **kwargs)
 
     return f_wrapped
 
