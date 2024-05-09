@@ -1,15 +1,3 @@
-"""Tracing utilities.
-
-
-This library provides functions for constructing a computation graph. With this
-library, one can,
-
-- Build a computation graph. (trace)
-- Register wrapper types for unwrapped values based on type(). (Box.register)
-- Build functions that can deal with wrapped values. (primitive)
-- Box values. (new_box)
-"""
-
 from contextlib import contextmanager
 from collections import defaultdict
 from itertools import count
@@ -55,6 +43,7 @@ def toposort(end_node):
 
 
 def trace(start_node, fun, x):
+    """Build a computation graph."""
     with trace_stack.new_trace() as trace_id:
         # Wrap 'x' in a box.
         start_box = new_box(x, trace_id, start_node)
@@ -271,18 +260,6 @@ box_types = Box.types
 # Get value from a Box.
 def getval(x):
     getval(x._value) if isinstance(x, Box) else x
-
-
-"""Vector-Jacobian Products, Backpropagation.
-
-Construct vector-Jacobian product of a DAG of computation. With this library,
-one can,
-
-- Construct vector-Jacobian product for any single-input single-output function.
-  (make_vjp)
-- Register vector-Jacobian product functions for any primitive function and
-  argument index.
-"""
 
 
 def make_vjp(fun, x):
