@@ -55,45 +55,6 @@ def toposort(end_node):
                 child_counts[parent] -= 1
 
 
-def wraps(fun, namestr="{fun}", docstr="{doc}", **kwargs):
-    """Decorator for a function wrapping another.
-
-    Used when wrapping a function to ensure its name and docstring get copied
-    over.
-
-    Args:
-      fun: function to be wrapped
-      namestr: Name string to use for wrapped function.
-      docstr: Docstring to use for wrapped function.
-      **kwargs: additional string format values.
-
-    Return:
-      Wrapped function.
-    """
-
-    def _wraps(f):
-        try:
-            f.__name__ = namestr.format(fun=get_name(fun), **kwargs)
-            f.__doc__ = docstr.format(fun=get_name(fun), doc=get_doc(fun), **kwargs)
-        finally:
-            return f
-
-    return _wraps
-
-
-def wrap_nary_f(fun, op, argnum):
-    namestr = "{op}_of_{fun}_wrt_argnum_{argnum}"
-    docstr = """\
-    {op} of function {fun} with respect to argument number {argnum}. Takes the
-    same arguments as {fun} but returns the {op}.
-    """
-    return wraps(fun, namestr, docstr, op=get_name(op), argnum=argnum)
-
-
-get_name = lambda f: getattr(f, "__name__", "[unknown name]")
-get_doc = lambda f: getattr(f, "__doc__", "")
-
-
 def trace(start_node, fun, x):
     with trace_stack.new_trace() as trace_id:
         # Wrap 'x' in a box.
@@ -145,7 +106,6 @@ def primitive(f_raw):
     """Wraps a function so that its gradient (vjp) can be specified and its
     invocation can be recorded."""
 
-    # @wraps(f_raw)
     def f_wrapped(*args, **kwargs):
         args = args[1:]
         # Fetch boxed arguments with largest trace_id.  This ensures that the
@@ -194,7 +154,6 @@ def notrace_primitive(f_raw):
     derivative near x=1.5.
     """
 
-    @wraps(f_raw)
     def f_wrapped(*args, **kwargs):
         # Extract np.ndarray values from boxed values.
         argvals = map(getval, args)
@@ -454,3 +413,7 @@ defvjp(anp.log, lambda g, ans, x: g / x)
 defvjp(anp.tanh, lambda g, ans, x: g / anp.cosh(x) ** 2)
 defvjp(anp.sinh, lambda g, ans, x: g * anp.cosh(x))
 defvjp(anp.cosh, lambda g, ans, x: g * anp.sinh(x))
+
+if __name__ == "__main__":
+    print(anp.negative(1))
+    print(anp.cosh(0))
