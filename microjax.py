@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from collections import defaultdict
 from itertools import count
 import numpy as np
+import unittest
 
 
 def subvals(x, ivs):
@@ -364,6 +365,17 @@ defvjp(anp.tanh, lambda g, ans, x: g / anp.cosh(x) ** 2)
 defvjp(anp.sinh, lambda g, ans, x: g * anp.cosh(x))
 defvjp(anp.cosh, lambda g, ans, x: g * anp.sinh(x))
 
+
+class TestMicroJax(unittest.TestCase):
+    def test_basic(self):
+        self.assertAlmostEqual(anp.negative(1.0), -1.0)
+        self.assertAlmostEqual(anp.exp(1.0), 2.718281828459045)
+        self.assertAlmostEqual(anp.exp(0.0), 1.0)
+        self.assertAlmostEqual(anp.log(1.0), 0.0)
+        self.assertAlmostEqual(anp.tanh(0.0), 0.0)
+        self.assertAlmostEqual(anp.sinh(0.0), 0.0)
+        self.assertAlmostEqual(anp.cosh(0.0), 1.0)
+
+
 if __name__ == "__main__":
-    print(anp.negative(1))
-    print(anp.cosh(0))
+    unittest.main()
