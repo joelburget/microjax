@@ -1,5 +1,3 @@
-from collections import defaultdict
-from itertools import count
 import numpy as np
 import unittest
 
@@ -203,31 +201,6 @@ def add_outgrads(prev_g, g):
     return prev_g + g
 
 
-primitive_vjps = defaultdict(dict)
-
-
-def defvjp(fun, *vjps, **kwargs):
-    """Register vector-Jacobian product functions.
-
-    Let fun(x, y, ...) = ans be a function. We wish to register a
-    vector-Jacobian product for each of fun's arguments. That is, functions
-
-      vjp_x(g, ans, x, y, ...) = g df/dx
-      vjp_y(g, ans, x, y, ...) = g df/dy
-      ...
-
-    This function registers said callbacks.
-
-    Args:
-      fun: function for which one wants to define vjps for.
-      *vjps: functions. vector-Jacobian products. One per argument to fun().
-      **kwargs: additional keyword arugments. Only 'argnums' is used.
-    """
-    argnums = kwargs.get("argnums", count())
-    for argnum, vjp in zip(argnums, vjps):
-        primitive_vjps[fun][argnum] = vjp
-
-
 def grad(fun, argnum=0):
     """Constructs gradient function.
 
@@ -271,13 +244,15 @@ class Anp:
 
 anp = Anp()
 
-defvjp(anp.negative, lambda g, ans, x: -g)
-# defvjp(anp.multiply, lambda g, ans, x:
-defvjp(anp.exp, lambda g, ans, x: ans * g)
-defvjp(anp.log, lambda g, ans, x: g / x)
-defvjp(anp.tanh, lambda g, ans, x: g / anp.cosh(x) ** 2)
-defvjp(anp.sinh, lambda g, ans, x: g * anp.cosh(x))
-defvjp(anp.cosh, lambda g, ans, x: g * anp.sinh(x))
+primitive_vjps = {
+    anp.negative: {0: lambda g, ans, x: -g},
+    # anp.multiply: {0 lambda g, ans, x: ...}
+    anp.exp: {0: lambda g, ans, x: ans * g},
+    anp.log: {0: lambda g, ans, x: g / x},
+    anp.tanh: {0: lambda g, ans, x: g / np.cosh(x) ** 2},
+    anp.sinh: {0: lambda g, ans, x: g * np.cosh(x)},
+    anp.cosh: {0: lambda g, ans, x: g * np.sinh(x)},
+}
 
 
 class Box:
