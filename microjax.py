@@ -258,27 +258,13 @@ primitive_vjps = {
 class Box:
     """Box for np.ndarray.
 
-    Anything you can do with an np.ndarray, you can do with an Box.
+    Anything you can do with an np.ndarray, you can do with a Box.
     """
 
     def __init__(self, value, trace_id, node):
         self._value = value
         self._node = node
         self._trace_id = trace_id
-
-    def __bool__(self):
-        return bool(self._value)
-
-    __nonzero__ = __bool__
-
-    def __str__(self):
-        return "Autograd {0} with value {1}".format(
-            type(self).__name__, str(self._value)
-        )
-
-    # Used by NumPy to determine which type gets returned when there are
-    # multiple possibilities. Larger numbers == higher priority.
-    __array_priority__ = 100.0
 
     @primitive
     def __getitem__(A, idx):
@@ -293,9 +279,6 @@ class Box:
 
     def __len__(self):
         return len(self._value)
-
-    def astype(self, *args, **kwargs):
-        return anp._astype(self, *args, **kwargs)
 
     def __neg__(self):
         return anp.negative(self)
@@ -348,29 +331,8 @@ class Box:
     def __rmatmul__(self, other):
         return anp.matmul(other, self)
 
-    def __eq__(self, other):
-        return anp.equal(self, other)
-
-    def __ne__(self, other):
-        return anp.not_equal(self, other)
-
-    def __gt__(self, other):
-        return anp.greater(self, other)
-
-    def __ge__(self, other):
-        return anp.greater_equal(self, other)
-
-    def __lt__(self, other):
-        return anp.less(self, other)
-
-    def __le__(self, other):
-        return anp.less_equal(self, other)
-
     def __abs__(self):
         return anp.abs(self)
-
-    def __hash__(self):
-        return id(self)
 
 
 class TestMicroJax(unittest.TestCase):
