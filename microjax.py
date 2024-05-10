@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from collections import defaultdict
 from itertools import count
 import numpy as np
@@ -27,9 +26,14 @@ def toposort(end_node):
                 child_counts[parent] -= 1
 
 
+trace_id = 0
+
+
 def trace(start_node, fun, x):
     """Build a computation graph."""
-    with trace_stack.new_trace() as trace_id:
+    global trace_id
+    trace_id += 1
+    try:
         # Wrap 'x' in a box.
         start_box = Box(x, trace_id, start_node)
 
@@ -44,6 +48,8 @@ def trace(start_node, fun, x):
         else:
             # Output seems independent of input
             return end_box, None
+    finally:
+        trace_id -= 1
 
 
 class Node(object):
@@ -100,8 +106,7 @@ def primitive(f_raw):
             # Calculate result of applying original numpy function.
             #
             # Note that we use a recursive call here in order to also augment
-            # outer calls to trace() with lower trace_ids. See TraceStack's
-            # docstring for details.
+            # outer calls to trace() with lower trace_ids.
             ans = f_wrapped(*argvals, **kwargs)
 
             # Create a new node
@@ -137,43 +142,6 @@ def find_top_boxed_args(args):
             elif arg._trace_id == top_trace_id:
                 top_boxes.append((argnum, arg))
     return top_boxes, top_trace_id
-
-
-class TraceStack(object):
-    """Tracks number of times trace() has been called.
-
-    This is critical to ensure calling grad() on a function that also calls
-    grad() resolves correctly. For example,
-
-    ```
-    def f(x):
-      def g(y):
-        return x * y
-      return grad(g)(x)
-
-    y = grad(f)(5.)
-    ```
-
-    First, grad(f)(5.) wraps 5. in a Box and calls f(Box(5)). Then, grad(g)(x)
-    wraps Box(5) again and calls g(Box(Box(5)). When computing grad(g), we want
-    to treat x=Box(5) as fixed -- it's not a direct argument to g(). How does
-    Autograd know that x is fixed, when all it can see is
-    np.multipy(Box(5.), Box(Box(5.))? Because the second argument has a larger
-    trace_id than the former!
-    """
-
-    def __init__(self):
-        self.top = -1
-
-    @contextmanager
-    def new_trace(self):
-        """Increment trace depth."""
-        self.top += 1
-        yield self.top
-        self.top -= 1
-
-
-trace_stack = TraceStack()
 
 
 def make_vjp(fun, x):
