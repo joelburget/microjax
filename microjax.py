@@ -31,7 +31,7 @@ def trace(start_node, fun, x):
     """Build a computation graph."""
     with trace_stack.new_trace() as trace_id:
         # Wrap 'x' in a box.
-        start_box = new_box(x, trace_id, start_node)
+        start_box = Box(x, trace_id, start_node)
 
         # Apply fun() to boxed value. This will carry the value throughout the
         # comutation as well as the box.
@@ -106,7 +106,7 @@ def primitive(f_raw):
 
             # Create a new node
             node = Node(ans, f_wrapped, argvals, kwargs, argnums, parents)
-            return new_box(ans, trace_id, node)
+            return Box(ans, trace_id, node)
         else:
             return f_raw(*args, **kwargs)
 
@@ -174,70 +174,6 @@ class TraceStack(object):
 
 
 trace_stack = TraceStack()
-
-
-class Box(object):
-    """Boxes a value within a computation graph."""
-
-    # Type -> subclasses of Box. Types may be instances of Box. Subclasses must
-    # take same arguments for __init__().
-    type_mappings = {}
-
-    # Non-Box types that can be boxed.
-    types = set()
-
-    def __init__(self, value, trace_id, node):
-        self._value = value
-        self._node = node
-        self._trace_id = trace_id
-
-    def __bool__(self):
-        return bool(self._value)
-
-    __nonzero__ = __bool__
-
-    def __str__(self):
-        return "Autograd {0} with value {1}".format(
-            type(self).__name__, str(self._value)
-        )
-
-    @classmethod
-    def register(cls, value_type):
-        """Register a class as a Box for type 'value_type'.
-
-        Should be called immediately after declaration.
-
-        Args:
-          cls: Inherits from Box. Type to box values of type 'value_type'.
-          value_type: Type to be boxed.
-        """
-        Box.types.add(cls)
-        Box.type_mappings[value_type] = cls
-
-        # The Box implementation for a Box type is itself. Why? Imagine a nested
-        # call to grad(). One doesn't want the inner Box's computation graph to
-        # interact with the outer Box's.
-        Box.type_mappings[cls] = cls
-
-
-box_type_mappings = Box.type_mappings
-
-
-def new_box(value, trace_id, node):
-    """Box an unboxed value.
-
-    Args:
-      value: unboxed value
-      trace_id: int. Trace stack depth.
-      node: Node corresponding to this boxed value.
-
-    Returns:
-      Boxed value.
-    """
-    try:
-        return box_type_mappings[type(value)](value, trace_id, node)
-    except KeyError:
-        raise TypeError("Can't differentiate w.r.t. type {}".format(type(value)))
 
 
 def make_vjp(fun, x):
@@ -376,14 +312,26 @@ defvjp(anp.sinh, lambda g, ans, x: g * anp.cosh(x))
 defvjp(anp.cosh, lambda g, ans, x: g * anp.sinh(x))
 
 
-class ArrayBox(Box):
+class Box:
     """Box for np.ndarray.
 
-    Anything you can do with an np.ndarray, you can do with an ArrayBox.
+    Anything you can do with an np.ndarray, you can do with an Box.
     """
 
-    # This class has no attributes.
-    __slots__ = []
+    def __init__(self, value, trace_id, node):
+        self._value = value
+        self._node = node
+        self._trace_id = trace_id
+
+    def __bool__(self):
+        return bool(self._value)
+
+    __nonzero__ = __bool__
+
+    def __str__(self):
+        return "Autograd {0} with value {1}".format(
+            type(self).__name__, str(self._value)
+        )
 
     # Used by NumPy to determine which type gets returned when there are
     # multiple possibilities. Larger numbers == higher priority.
@@ -480,20 +428,6 @@ class ArrayBox(Box):
 
     def __hash__(self):
         return id(self)
-
-
-# Register ArrayBox as the type to use when boxing np.ndarray and scalar values.
-ArrayBox.register(np.ndarray)
-for type_ in [
-    float,
-    np.float64,
-    np.float32,
-    np.float16,
-    complex,
-    np.complex64,
-    np.complex128,
-]:
-    ArrayBox.register(type_)
 
 
 class TestMicroJax(unittest.TestCase):
