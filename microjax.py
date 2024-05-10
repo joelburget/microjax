@@ -5,22 +5,6 @@ import numpy as np
 import unittest
 
 
-def subvals(x, ivs):
-    """Replace the i-th value of x with v.
-
-    Args:
-      x: iterable of items.
-      ivs: list of (int, value) pairs.
-
-    Returns:
-      x modified appropriately.
-    """
-    x_ = list(x)
-    for i, v in ivs:
-        x_[i] = v
-    return tuple(x_)
-
-
 def toposort(end_node):
     child_counts = {}
     stack = [end_node]
@@ -96,16 +80,17 @@ def primitive(f_raw):
     invocation can be recorded."""
 
     def f_wrapped(*args, **kwargs):
-        args = args[1:]
+        if isinstance(args[0], Anp):  # XXX HACK
+            args = args[1:]
         # Fetch boxed arguments with largest trace_id.  This ensures that the
         # computational graph being constructed only consists of other nodes
         # from the same call to trace().
         boxed_args, trace_id = find_top_boxed_args(args)
         if boxed_args:
             # Replace some elements of args with corresponding unboxed values.
-            argvals = subvals(
-                args, [(argnum, box._value) for argnum, box in boxed_args]
-            )
+            argvals = list(args)
+            for argnum, box in boxed_args:
+                argvals[argnum] = box._value
             # Get nodes for each boxed argument.
             parents = tuple(box._node for _, box in boxed_args)
 
@@ -255,14 +240,6 @@ def new_box(value, trace_id, node):
         raise TypeError("Can't differentiate w.r.t. type {}".format(type(value)))
 
 
-box_types = Box.types
-
-
-# Get value from a Box.
-def getval(x):
-    getval(x._value) if isinstance(x, Box) else x
-
-
 def make_vjp(fun, x):
     """Make function for vector-Jacobian product.
 
@@ -347,23 +324,182 @@ def defvjp(fun, *vjps, **kwargs):
         primitive_vjps[fun][argnum] = vjp
 
 
+def subval(x, i, v):
+    """Replace the i-th value of x with v."""
+    x_ = list(x)
+    x_[i] = v
+    return tuple(x_)
+
+
+def grad(fun, argnum=0):
+    """Constructs gradient function.
+
+    Given a function fun(x), returns a function fun'(x) that returns the
+    gradient of fun(x) wrt x.
+
+    Args:
+      fun: single-argument function. ndarray -> ndarray.
+      argnum: integer. Index of argument to take derivative wrt.
+
+    Returns:
+      gradfun: function that takes same args as fun(), but returns the gradient
+        wrt to fun()'s argnum-th argument.
+    """
+
+    def gradfun(*args, **kwargs):
+        # Replace args[argnum] with x. Define a single-argument function to
+        # compute derivative wrt.
+        def unary_fun(x):
+            new_args = subval(args, argnum, x)
+            return fun(*new_args, **kwargs)
+
+        # Construct vector-Jacobian product
+        vjp, ans = make_vjp(unary_fun, args[argnum])
+        return vjp(np.ones_like(ans))
+
+    return gradfun
+
+
 class Anp:
-    negative = primitive(np.negative)
-    exp = primitive(np.exp)
-    log = primitive(np.log)
-    tanh = primitive(np.tanh)
-    sinh = primitive(np.sinh)
-    cosh = primitive(np.cosh)
+    def __init__(self):
+        self.negative = primitive(np.negative)
+        self.exp = primitive(np.exp)
+        self.log = primitive(np.log)
+        self.tanh = primitive(np.tanh)
+        self.sinh = primitive(np.sinh)
+        self.cosh = primitive(np.cosh)
+        self.multiply = primitive(np.multiply)
 
 
 anp = Anp()
 
 defvjp(anp.negative, lambda g, ans, x: -g)
+# defvjp(anp.multiply, lambda g, ans, x:
 defvjp(anp.exp, lambda g, ans, x: ans * g)
 defvjp(anp.log, lambda g, ans, x: g / x)
 defvjp(anp.tanh, lambda g, ans, x: g / anp.cosh(x) ** 2)
 defvjp(anp.sinh, lambda g, ans, x: g * anp.cosh(x))
 defvjp(anp.cosh, lambda g, ans, x: g * anp.sinh(x))
+
+
+class ArrayBox(Box):
+    """Box for np.ndarray.
+
+    Anything you can do with an np.ndarray, you can do with an ArrayBox.
+    """
+
+    # This class has no attributes.
+    __slots__ = []
+
+    # Used by NumPy to determine which type gets returned when there are
+    # multiple possibilities. Larger numbers == higher priority.
+    __array_priority__ = 100.0
+
+    @primitive
+    def __getitem__(A, idx):
+        return A[idx]
+
+    # Constants w.r.t float data just pass though
+    shape = property(lambda self: self._value.shape)
+    ndim = property(lambda self: self._value.ndim)
+    size = property(lambda self: self._value.size)
+    dtype = property(lambda self: self._value.dtype)
+    T = property(lambda self: anp.transpose(self))
+
+    def __len__(self):
+        return len(self._value)
+
+    def astype(self, *args, **kwargs):
+        return anp._astype(self, *args, **kwargs)
+
+    def __neg__(self):
+        return anp.negative(self)
+
+    def __add__(self, other):
+        return anp.add(self, other)
+
+    def __sub__(self, other):
+        return anp.subtract(self, other)
+
+    def __mul__(self, other):
+        return anp.multiply(self, other)
+
+    def __pow__(self, other):
+        return anp.power(self, other)
+
+    def __div__(self, other):
+        return anp.divide(self, other)
+
+    def __mod__(self, other):
+        return anp.mod(self, other)
+
+    def __truediv__(self, other):
+        return anp.true_divide(self, other)
+
+    def __matmul__(self, other):
+        return anp.matmul(self, other)
+
+    def __radd__(self, other):
+        return anp.add(other, self)
+
+    def __rsub__(self, other):
+        return anp.subtract(other, self)
+
+    def __rmul__(self, other):
+        return anp.multiply(other, self)
+
+    def __rpow__(self, other):
+        return anp.power(other, self)
+
+    def __rdiv__(self, other):
+        return anp.divide(other, self)
+
+    def __rmod__(self, other):
+        return anp.mod(other, self)
+
+    def __rtruediv__(self, other):
+        return anp.true_divide(other, self)
+
+    def __rmatmul__(self, other):
+        return anp.matmul(other, self)
+
+    def __eq__(self, other):
+        return anp.equal(self, other)
+
+    def __ne__(self, other):
+        return anp.not_equal(self, other)
+
+    def __gt__(self, other):
+        return anp.greater(self, other)
+
+    def __ge__(self, other):
+        return anp.greater_equal(self, other)
+
+    def __lt__(self, other):
+        return anp.less(self, other)
+
+    def __le__(self, other):
+        return anp.less_equal(self, other)
+
+    def __abs__(self):
+        return anp.abs(self)
+
+    def __hash__(self):
+        return id(self)
+
+
+# Register ArrayBox as the type to use when boxing np.ndarray and scalar values.
+ArrayBox.register(np.ndarray)
+for type_ in [
+    float,
+    np.float64,
+    np.float32,
+    np.float16,
+    complex,
+    np.complex64,
+    np.complex128,
+]:
+    ArrayBox.register(type_)
 
 
 class TestMicroJax(unittest.TestCase):
@@ -375,6 +511,23 @@ class TestMicroJax(unittest.TestCase):
         self.assertAlmostEqual(anp.tanh(0.0), 0.0)
         self.assertAlmostEqual(anp.sinh(0.0), 0.0)
         self.assertAlmostEqual(anp.cosh(0.0), 1.0)
+
+    def test_grad_negative(self):
+        self.assertAlmostEqual(grad(anp.negative)(1.0), -1.0)
+        self.assertAlmostEqual(grad(grad(anp.negative))(1.0), 0.0)
+        self.assertAlmostEqual(grad(grad(grad(anp.negative)))(1.0), 0.0)
+        self.assertAlmostEqual(grad(grad(grad(grad(anp.negative))))(1.0), 0.0)
+
+    def test_grad_tanh(self):
+        self.assertAlmostEqual(grad(anp.tanh)(0.0), 1.0)
+        # needs power
+
+        # needs multiply
+        # def test_grad_exp(self):
+        #     self.assertAlmostEqual(grad(anp.exp)(1.0), math.e)
+        #     self.assertAlmostEqual(grad(grad(anp.exp))(1.0), math.e)
+        #     self.assertAlmostEqual(grad(grad(grad(anp.exp)))(1.0), math.e)
+        #     self.assertAlmostEqual(grad(grad(grad(grad(anp.exp))))(1.0), math.e)
 
 
 if __name__ == "__main__":
