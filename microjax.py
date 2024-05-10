@@ -324,13 +324,6 @@ def defvjp(fun, *vjps, **kwargs):
         primitive_vjps[fun][argnum] = vjp
 
 
-def subval(x, i, v):
-    """Replace the i-th value of x with v."""
-    x_ = list(x)
-    x_[i] = v
-    return tuple(x_)
-
-
 def grad(fun, argnum=0):
     """Constructs gradient function.
 
@@ -350,7 +343,8 @@ def grad(fun, argnum=0):
         # Replace args[argnum] with x. Define a single-argument function to
         # compute derivative wrt.
         def unary_fun(x):
-            new_args = subval(args, argnum, x)
+            new_args = list(args)
+            new_args[argnum] = x
             return fun(*new_args, **kwargs)
 
         # Construct vector-Jacobian product
