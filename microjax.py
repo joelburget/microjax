@@ -84,8 +84,6 @@ def primitive(f_raw):
     invocation can be recorded."""
 
     def f_wrapped(*args, **kwargs):
-        if isinstance(args[0], Anp):  # XXX HACK
-            args = args[1:]
         # Fetch boxed arguments with largest trace_id.  This ensures that the
         # computational graph being constructed only consists of other nodes
         # from the same call to trace().
