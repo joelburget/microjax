@@ -1,5 +1,6 @@
 import numpy as np
 import unittest
+import math
 
 
 def toposort(end_node):
@@ -238,19 +239,52 @@ class Anp:
         self.sinh = primitive(np.sinh)
         self.cosh = primitive(np.cosh)
         self.multiply = primitive(np.multiply)
+        self.add = primitive(np.add)
+        self.abs = primitive(np.abs)
+        self.true_divide = primitive(np.true_divide)
+        self.divide = self.true_divide
+        self.sign = primitive(np.sign)
+        self.power = primitive(np.power)
+        self.where = primitive(np.where)
+        self.zeros = primitive(np.zeros)
 
 
 anp = Anp()
 
 primitive_vjps = {
     anp.negative: {0: lambda g, ans, x: -g},
-    # anp.multiply: {0 lambda g, ans, x: ...}
+    anp.multiply: {
+        0: lambda g, ans, x, y: y * g,
+        1: lambda g, ans, x, y: x * g,
+    },
     anp.exp: {0: lambda g, ans, x: ans * g},
     anp.log: {0: lambda g, ans, x: g / x},
-    anp.tanh: {0: lambda g, ans, x: g / np.cosh(x) ** 2},
-    anp.sinh: {0: lambda g, ans, x: g * np.cosh(x)},
-    anp.cosh: {0: lambda g, ans, x: g * np.sinh(x)},
+    anp.tanh: {0: lambda g, ans, x: g / anp.cosh(x) ** 2},
+    anp.sinh: {0: lambda g, ans, x: g * anp.cosh(x)},
+    anp.cosh: {0: lambda g, ans, x: g * anp.sinh(x)},
+    anp.divide: {
+        0: lambda g, ans, x, y: g / y,
+        1: lambda g, ans, x, y: -g * x / y**2,
+    },
+    anp.add: {
+        0: lambda g, ans, x, y: g,
+        1: lambda g, ans, x, y: g,
+    },
+    anp.abs: {0: lambda g, ans, x: g * anp.sign(x)},
+    anp.sign: {0: lambda g, ans, x: 0},
+    anp.power: {
+        0: lambda g, ans, x, y: g * y * x ** anp.where(y, y - 1, 1.0),
+        1: lambda g, ans, x, y: g * anp.log(anp.where(x, x, 1.0)) * x**y,
+    },
+    anp.where: {
+        0: lambda g, ans, c, x=None, y=None: anp.where(c, g, anp.zeros(g.shape)),
+        1: lambda g, ans, c, x=None, y=None: anp.where(c, anp.zeros(g.shape), g),
+    },
 }
+
+
+def relu(x):
+    return (x + abs(x)) / 2
 
 
 class Box:
@@ -351,14 +385,21 @@ class TestMicroJax(unittest.TestCase):
 
     def test_grad_tanh(self):
         self.assertAlmostEqual(grad(anp.tanh)(0.0), 1.0)
-        # needs power
+        self.assertAlmostEqual(grad(grad(anp.tanh))(0.0), 0.0)
 
-        # needs multiply
-        # def test_grad_exp(self):
-        #     self.assertAlmostEqual(grad(anp.exp)(1.0), math.e)
-        #     self.assertAlmostEqual(grad(grad(anp.exp))(1.0), math.e)
-        #     self.assertAlmostEqual(grad(grad(grad(anp.exp)))(1.0), math.e)
-        #     self.assertAlmostEqual(grad(grad(grad(grad(anp.exp))))(1.0), math.e)
+    def test_grad_exp(self):
+        self.assertAlmostEqual(grad(anp.exp)(1.0), math.e)
+        self.assertAlmostEqual(grad(grad(anp.exp))(1.0), math.e)
+        self.assertAlmostEqual(grad(grad(grad(anp.exp)))(1.0), math.e)
+        self.assertAlmostEqual(grad(grad(grad(grad(anp.exp))))(1.0), math.e)
+
+    def test_relu(self):
+        self.assertAlmostEqual(relu(1.0), 1.0)
+        self.assertAlmostEqual(relu(-1.0), 0.0)
+        self.assertAlmostEqual(grad(relu)(1.0), 1.0)
+        self.assertAlmostEqual(grad(relu)(-1.0), 0.0)
+        self.assertAlmostEqual(grad(grad(relu))(1.0), 0.0)
+        self.assertAlmostEqual(grad(grad(relu))(-1.0), 0.0)
 
 
 if __name__ == "__main__":
