@@ -1,6 +1,7 @@
 import numpy as np
 import unittest
 import math
+from dataclasses import dataclass
 
 
 def toposort(end_node):
@@ -365,6 +366,71 @@ class Box:
 
     def __abs__(self):
         return anp.abs(self)
+
+
+@dataclass
+class Neuron:
+    w: np.array
+    b: np.array
+
+    def __init__(self, nin, nonlin=True):
+        self.w = np.random.uniform(-1, 1, (nin,))
+        self.b = np.array([0.0])
+        self.nonlin = nonlin
+
+    def __call__(self, x):
+        act = self.w @ x + self.b
+        return relu(act) if self.nonlin else act
+
+
+@dataclass
+class Layer:
+    neurons: list[Neuron]
+
+    def __init__(self, nin, nout, nonlin):
+        self.neurons = [Neuron(nin, nonlin) for _ in range(nout)]
+
+    def __call__(self, x):
+        out = [neuron(x) for neuron in self.neurons]
+        return out[0] if len(out) == 1 else out
+
+
+@dataclass
+class MLP:
+    layers: list[Layer]
+
+    def __init__(self, nin, nouts):
+        sz = [nin] + nouts
+        self.layers = [
+            Layer(sz[i], sz[i + 1], nonlin=i != len(nouts) - 1)
+            for i in range(len(nouts))
+        ]
+
+    def __call__(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
+class TestNeuron(unittest.TestCase):
+    def test_basic(self):
+        neuron = Neuron(1, nonlin=True)
+        neuron.w = np.array([[1.0, 2.0], [3.0, 4.0]])
+        neuron.b = np.array([1.0, 2.0])
+        x = np.array([1.0, 2.0])
+        np.testing.assert_allclose(neuron(x), np.array((6, 13)), rtol=1e-5, atol=0)
+
+
+class TestLayer(unittest.TestCase):
+    def test_doesnt_throw(self):
+        layer = Layer(4, 6, nonlin=True)
+        layer(np.array([1.0, 2.0, 3.0, 4.0]))
+
+
+class TestMLP(unittest.TestCase):
+    def test_doesnt_throw(self):
+        mlp = MLP(2, [16, 16, 1])
+        mlp(np.array([1.0, 2.0]))
 
 
 class TestMicroJax(unittest.TestCase):
