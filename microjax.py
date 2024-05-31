@@ -156,6 +156,7 @@ def make_vjp(fun, x):
     """
     start_node = Node.new_root()
     end_value, end_node = trace(start_node, fun, x)
+
     if end_node is None:
 
         def vjp(g):
@@ -241,6 +242,7 @@ class Anp:
         self.cosh = primitive(np.cosh)
         self.multiply = primitive(np.multiply)
         self.add = primitive(np.add)
+        self.subtract = primitive(np.subtract)
         self.abs = primitive(np.abs)
         self.true_divide = primitive(np.true_divide)
         self.divide = self.true_divide
@@ -248,9 +250,12 @@ class Anp:
         self.power = primitive(np.power)
         self.where = primitive(np.where)
         self.zeros = primitive(np.zeros)
+        self.array = primitive(np.array)
+        self.matmul = primitive(np.matmul)
 
 
 anp = Anp()
+
 
 primitive_vjps = {
     anp.negative: {0: lambda g, ans, x: -g},
@@ -271,6 +276,10 @@ primitive_vjps = {
         0: lambda g, ans, x, y: g,
         1: lambda g, ans, x, y: g,
     },
+    anp.subtract: {
+        0: lambda g, ans, x, y: g,
+        1: lambda g, ans, x, y: -g,
+    },
     anp.abs: {0: lambda g, ans, x: g * anp.sign(x)},
     anp.sign: {0: lambda g, ans, x: 0},
     anp.power: {
@@ -280,6 +289,10 @@ primitive_vjps = {
     anp.where: {
         0: lambda g, ans, c, x=None, y=None: anp.where(c, g, anp.zeros(g.shape)),
         1: lambda g, ans, c, x=None, y=None: anp.where(c, anp.zeros(g.shape), g),
+    },
+    anp.matmul: {
+        0: lambda g, ans, x, y: g * y.T,
+        1: lambda g, ans, x, y: x.T * g,
     },
 }
 
@@ -298,6 +311,15 @@ class Box:
         self._value = value
         self._node = node
         self._trace_id = trace_id
+
+    # Tell Numpy to use this type instead of np.array. When is this useful?
+    # When adding `np.array([1.0]) + Box(np.array([2.0]))`, we want the result
+    # to be a Box, not an np.array of Box. This is bad:
+    # >>> np.array([1.0]) + microjax.Box(np.array([1.0]), -1, None)
+    # array([<microjax.Box object at 0x10c79c680>], dtype=object)
+    # >>> microjax.Box(np.array([1.0]), -1, None) + np.array([1.0])
+    # <microjax.Box object at 0x10c79cef0>
+    __array_priority__ = 100.0
 
     @primitive
     def __getitem__(A, idx):
@@ -368,6 +390,12 @@ class Box:
         return anp.abs(self)
 
 
+def neuron_call(w, b, x, nonlin):
+    act_mul = w @ x
+    act = act_mul + b
+    return relu(act) if nonlin else act
+
+
 @dataclass
 class Neuron:
     w: np.array
@@ -378,9 +406,17 @@ class Neuron:
         self.b = np.array([0.0])
         self.nonlin = nonlin
 
+    def value_and_grad(self, x):
+        return (
+            self(x),
+            (
+                grad(neuron_call, 0)(self.w, self.b, x, self.nonlin),
+                grad(neuron_call, 1)(self.w, self.b, x, self.nonlin),
+            ),
+        )
+
     def __call__(self, x):
-        act = self.w @ x + self.b
-        return relu(act) if self.nonlin else act
+        return neuron_call(self.w, self.b, x, self.nonlin)
 
 
 @dataclass
@@ -413,12 +449,21 @@ class MLP:
 
 
 class TestNeuron(unittest.TestCase):
-    def test_basic(self):
+    def test_call(self):
         neuron = Neuron(1, nonlin=True)
         neuron.w = np.array([[1.0, 2.0], [3.0, 4.0]])
         neuron.b = np.array([1.0, 2.0])
         x = np.array([1.0, 2.0])
         np.testing.assert_allclose(neuron(x), np.array((6, 13)), rtol=1e-5, atol=0)
+
+    def test_value_and_grad(self):
+        neuron = Neuron(2, nonlin=True)
+        neuron.w = np.ones((2,))
+        neuron.b = np.array([1.0])
+        value, (w_grad, b_grad) = neuron.value_and_grad(np.ones((2,)))
+        np.testing.assert_allclose(value, 3.0, rtol=1e-5, atol=0)
+        np.testing.assert_allclose(w_grad, np.array([1.0, 1.0]), rtol=1e-5, atol=0)
+        np.testing.assert_allclose(b_grad, np.array([1.0]), rtol=1e-5, atol=0)
 
 
 class TestLayer(unittest.TestCase):
@@ -431,6 +476,16 @@ class TestMLP(unittest.TestCase):
     def test_doesnt_throw(self):
         mlp = MLP(2, [16, 16, 1])
         mlp(np.array([1.0, 2.0]))
+
+    # class TestTraining(unittest.TestCase):
+    #     def test_simple(self):
+    #         mlp = MLP(2, [16, 16, 1])
+    #
+    #         def loss(x, y):
+    #             (mlp(x) - y) ** 2
+    #
+    #         g = grad(loss)(np.array([1.0, 2.0]), 1.0)
+    #         print("g", g)
 
 
 class TestMicroJax(unittest.TestCase):
