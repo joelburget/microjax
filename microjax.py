@@ -312,7 +312,8 @@ class Box:
         self._node = node
         self._trace_id = trace_id
 
-    # Tell Numpy to use this type instead of np.array. When is this useful?
+    # Tell Numpy to use this type instead of np.array. (It tells Numpy which
+    # type to use when there are two possibilities.) When is this useful?
     # When adding `np.array([1.0]) + Box(np.array([2.0]))`, we want the result
     # to be a Box, not an np.array of Box. This is bad:
     # >>> np.array([1.0]) + microjax.Box(np.array([1.0]), -1, None)
@@ -403,7 +404,7 @@ class Neuron:
 
     def __init__(self, nin, nonlin=True):
         self.w = np.random.uniform(-1, 1, (nin,))
-        self.b = np.array([0.0])
+        self.b = 0.0
         self.nonlin = nonlin
 
     def value_and_grad(self, x):
@@ -426,6 +427,11 @@ class Layer:
     def __init__(self, nin, nout, nonlin):
         self.neurons = [Neuron(nin, nonlin) for _ in range(nout)]
 
+    def value_and_grad(self, x):
+        values, grads = zip(*[neuron.value_and_grad(x) for neuron in self.neurons])
+        value = values[0] if len(values) == 1 else np.array(values)
+        return value, grads
+
     def __call__(self, x):
         out = [neuron(x) for neuron in self.neurons]
         return out[0] if len(out) == 1 else out
@@ -442,28 +448,46 @@ class MLP:
             for i in range(len(nouts))
         ]
 
+    def value_and_grad(self, x):
+        all_raw_grads = []
+        for layer in self.layers:
+            x, raw_gradients = layer.value_and_grad(x)
+            print(f"{(x, raw_gradients)=}")
+            all_raw_grads.append(raw_gradients)
+
+        grads = [all_raw_grads.pop()]
+        while all_raw_grads:
+            grads.append(all_raw_grads.pop(0) @ grads[-1])
+        grads = grads[::-1]
+
+        return x, grads
+
     def __call__(self, x):
         for layer in self.layers:
             x = layer(x)
         return x
 
 
+def assert_allclose(a, b):
+    np.testing.assert_allclose(a, b, rtol=1e-5, atol=0)
+
+
 class TestNeuron(unittest.TestCase):
     def test_call(self):
-        neuron = Neuron(1, nonlin=True)
-        neuron.w = np.array([[1.0, 2.0], [3.0, 4.0]])
-        neuron.b = np.array([1.0, 2.0])
+        neuron = Neuron(2, nonlin=True)
+        neuron.w = np.array([[1.0, 2.0]])
+        neuron.b = 0.0
         x = np.array([1.0, 2.0])
-        np.testing.assert_allclose(neuron(x), np.array((6, 13)), rtol=1e-5, atol=0)
+        np.testing.assert_allclose(neuron(x), np.array([6]))
 
     def test_value_and_grad(self):
         neuron = Neuron(2, nonlin=True)
         neuron.w = np.ones((2,))
         neuron.b = np.array([1.0])
         value, (w_grad, b_grad) = neuron.value_and_grad(np.ones((2,)))
-        np.testing.assert_allclose(value, 3.0, rtol=1e-5, atol=0)
-        np.testing.assert_allclose(w_grad, np.array([1.0, 1.0]), rtol=1e-5, atol=0)
-        np.testing.assert_allclose(b_grad, np.array([1.0]), rtol=1e-5, atol=0)
+        assert_allclose(value, 3.0)
+        assert_allclose(w_grad, np.array([1.0, 1.0]))
+        assert_allclose(b_grad, np.array([1.0]))
 
 
 class TestLayer(unittest.TestCase):
@@ -471,11 +495,39 @@ class TestLayer(unittest.TestCase):
         layer = Layer(4, 6, nonlin=True)
         layer(np.array([1.0, 2.0, 3.0, 4.0]))
 
+    def test_value_and_grad(self):
+        layer = Layer(2, 2, nonlin=False)
+        layer.neurons[0].w = np.array([1.0, 2.0])
+        layer.neurons[0].b = np.array([5.0])
+        layer.neurons[1].w = np.array([3.0, 4.0])
+        layer.neurons[1].b = np.array([6.0])
+        value, grads = layer.value_and_grad(np.array([1.0, 2.0]))
+        assert_allclose(
+            np.array(value).reshape((2,)),
+            np.array([10.0, 17.0]),
+        )
+        n1_w_grad, n1_b_grad = grads[0]
+        assert_allclose(n1_w_grad, np.array([1.0, 2.0]))
+        assert_allclose(n1_b_grad, np.array([1.0]))
+        n2_w_grad, n2_b_grad = grads[1]
+        assert_allclose(n2_w_grad, np.array([1.0, 2.0]))
+        assert_allclose(n2_b_grad, np.array([1.0]))
+
 
 class TestMLP(unittest.TestCase):
     def test_doesnt_throw(self):
         mlp = MLP(2, [16, 16, 1])
         mlp(np.array([1.0, 2.0]))
+
+    def test_value_and_grad(self):
+        mlp = MLP(2, [2, 2])
+        mlp.layers[0].neurons[0].w = np.array([1.0, 2.0])
+        mlp.layers[0].neurons[1].w = np.array([3.0, 4.0])
+        mlp.layers[1].neurons[0].w = np.array([5.0, 6.0])
+        mlp.layers[1].neurons[1].w = np.array([7.0, 8.0])
+        values, grads = mlp.value_and_grad(np.array([1.0, 2.0]))
+        assert_allclose(values, np.array([91.0, 123.0]))
+        print(f"{grads=}")
 
     # class TestTraining(unittest.TestCase):
     #     def test_simple(self):
