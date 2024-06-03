@@ -1,7 +1,6 @@
 import numpy as np
 import unittest
 import math
-from dataclasses import dataclass
 
 
 def toposort(end_node):
@@ -257,6 +256,26 @@ class Anp:
 anp = Anp()
 
 
+def matmul_vjp0(g, ans, x, y):
+    rows = g * y.T
+    if rows.shape == x.shape:
+        return rows
+    # TODO: generalize
+    result = np.reshape(rows, (rows.shape[0], 1)) * np.ones(x.shape)
+    print(f"matmul_vjp0 {g=}, {ans=}, {x=}, {y=}, {rows=}, {result=}")
+    return result
+
+
+def matmul_vjp1(g, ans, x, y):
+    rows = x.T * g
+    if rows.shape == y.shape:
+        return rows
+    # TODO: generalize
+    result = rows.sum(axis=1)
+    print(f"matmul_vjp1 {g=}, {ans=}, {x=}, {y=}, {rows=}, {result=}")
+    return result
+
+
 primitive_vjps = {
     anp.negative: {0: lambda g, ans, x: -g},
     anp.multiply: {
@@ -291,8 +310,8 @@ primitive_vjps = {
         1: lambda g, ans, c, x=None, y=None: anp.where(c, anp.zeros(g.shape), g),
     },
     anp.matmul: {
-        0: lambda g, ans, x, y: g * y.T,
-        1: lambda g, ans, x, y: x.T * g,
+        0: matmul_vjp0,  # lambda g, ans, x, y: g * y.T,
+        1: matmul_vjp1,  # lambda g, ans, x, y: x.T * g,
     },
 }
 
@@ -391,81 +410,19 @@ class Box:
         return anp.abs(self)
 
 
-def neuron_call(w, b, x, nonlin):
-    act_mul = w @ x
-    act = act_mul + b
-    return relu(act) if nonlin else act
+def neuron(w, b, x, nonlin=True):
+    z = w @ x + b
+    return relu(z) if nonlin else z
 
 
-@dataclass
-class Neuron:
-    w: np.array
-    b: np.array
-
-    def __init__(self, nin, nonlin=True):
-        self.w = np.random.uniform(-1, 1, (nin,))
-        self.b = 0.0
-        self.nonlin = nonlin
-
-    def value_and_grad(self, x):
-        return (
-            self(x),
-            (
-                grad(neuron_call, 0)(self.w, self.b, x, self.nonlin),
-                grad(neuron_call, 1)(self.w, self.b, x, self.nonlin),
-            ),
-        )
-
-    def __call__(self, x):
-        return neuron_call(self.w, self.b, x, self.nonlin)
+layer = neuron
 
 
-@dataclass
-class Layer:
-    neurons: list[Neuron]
-
-    def __init__(self, nin, nout, nonlin):
-        self.neurons = [Neuron(nin, nonlin) for _ in range(nout)]
-
-    def value_and_grad(self, x):
-        values, grads = zip(*[neuron.value_and_grad(x) for neuron in self.neurons])
-        value = values[0] if len(values) == 1 else np.array(values)
-        return value, grads
-
-    def __call__(self, x):
-        out = [neuron(x) for neuron in self.neurons]
-        return out[0] if len(out) == 1 else out
-
-
-@dataclass
-class MLP:
-    layers: list[Layer]
-
-    def __init__(self, nin, nouts):
-        sz = [nin] + nouts
-        self.layers = [
-            Layer(sz[i], sz[i + 1], nonlin=i != len(nouts) - 1)
-            for i in range(len(nouts))
-        ]
-
-    def value_and_grad(self, x):
-        all_raw_grads = []
-        for layer in self.layers:
-            x, raw_gradients = layer.value_and_grad(x)
-            print(f"{(x, raw_gradients)=}")
-            all_raw_grads.append(raw_gradients)
-
-        grads = [all_raw_grads.pop()]
-        while all_raw_grads:
-            grads.append(all_raw_grads.pop(0) @ grads[-1])
-        grads = grads[::-1]
-
-        return x, grads
-
-    def __call__(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
+def mlp(layers, x):
+    for w, b in layers[:-1]:
+        x = layer(w, b, x)
+    w, b = layers[-1]
+    return layer(w, b, x, nonlin=False)
 
 
 def assert_allclose(a, b):
@@ -474,70 +431,54 @@ def assert_allclose(a, b):
 
 class TestNeuron(unittest.TestCase):
     def test_call(self):
-        neuron = Neuron(2, nonlin=True)
-        neuron.w = np.array([[1.0, 2.0]])
-        neuron.b = 0.0
+        w = np.array([[1.0, 2.0]])
+        b = 0.0
         x = np.array([1.0, 2.0])
-        np.testing.assert_allclose(neuron(x), np.array([6]))
+        np.testing.assert_allclose(neuron(w, b, x), np.array([5]))
 
     def test_value_and_grad(self):
-        neuron = Neuron(2, nonlin=True)
-        neuron.w = np.ones((2,))
-        neuron.b = np.array([1.0])
-        value, (w_grad, b_grad) = neuron.value_and_grad(np.ones((2,)))
-        assert_allclose(value, 3.0)
-        assert_allclose(w_grad, np.array([1.0, 1.0]))
-        assert_allclose(b_grad, np.array([1.0]))
+        w = np.ones((2,))
+        b = 1.0
+        x = np.ones((2,))
+        assert_allclose(neuron(w, b, x), 3.0)
+        assert_allclose(grad(lambda w: neuron(w, b, x))(w), np.array([1.0, 1.0]))
+        assert_allclose(grad(lambda b: neuron(w, b, x))(b), np.array([1.0]))
 
 
 class TestLayer(unittest.TestCase):
-    def test_doesnt_throw(self):
-        layer = Layer(4, 6, nonlin=True)
-        layer(np.array([1.0, 2.0, 3.0, 4.0]))
-
     def test_value_and_grad(self):
-        layer = Layer(2, 2, nonlin=False)
-        layer.neurons[0].w = np.array([1.0, 2.0])
-        layer.neurons[0].b = np.array([5.0])
-        layer.neurons[1].w = np.array([3.0, 4.0])
-        layer.neurons[1].b = np.array([6.0])
-        value, grads = layer.value_and_grad(np.array([1.0, 2.0]))
+        w = np.array([[1.0, 2.0], [3.0, 4.0]])
+        b = np.zeros((2,))
+        x = np.ones((2,))
+        assert_allclose(layer(w, b, x), np.array([3.0, 7.0]))
         assert_allclose(
-            np.array(value).reshape((2,)),
-            np.array([10.0, 17.0]),
+            grad(lambda w: layer(w, b, x))(w), np.array([[1.0, 1.0], [1.0, 1.0]])
         )
-        n1_w_grad, n1_b_grad = grads[0]
-        assert_allclose(n1_w_grad, np.array([1.0, 2.0]))
-        assert_allclose(n1_b_grad, np.array([1.0]))
-        n2_w_grad, n2_b_grad = grads[1]
-        assert_allclose(n2_w_grad, np.array([1.0, 2.0]))
-        assert_allclose(n2_b_grad, np.array([1.0]))
+        assert_allclose(grad(lambda b: layer(w, b, x))(b), np.array([1.0, 1.0]))
 
 
 class TestMLP(unittest.TestCase):
-    def test_doesnt_throw(self):
-        mlp = MLP(2, [16, 16, 1])
-        mlp(np.array([1.0, 2.0]))
-
     def test_value_and_grad(self):
-        mlp = MLP(2, [2, 2])
-        mlp.layers[0].neurons[0].w = np.array([1.0, 2.0])
-        mlp.layers[0].neurons[1].w = np.array([3.0, 4.0])
-        mlp.layers[1].neurons[0].w = np.array([5.0, 6.0])
-        mlp.layers[1].neurons[1].w = np.array([7.0, 8.0])
-        values, grads = mlp.value_and_grad(np.array([1.0, 2.0]))
-        assert_allclose(values, np.array([91.0, 123.0]))
-        print(f"{grads=}")
-
-    # class TestTraining(unittest.TestCase):
-    #     def test_simple(self):
-    #         mlp = MLP(2, [16, 16, 1])
-    #
-    #         def loss(x, y):
-    #             (mlp(x) - y) ** 2
-    #
-    #         g = grad(loss)(np.array([1.0, 2.0]), 1.0)
-    #         print("g", g)
+        w1 = np.array([[1.0, 2.0], [3.0, 4.0]])
+        w2 = np.array([[5.0, 6.0], [7.0, 8.0]])
+        b1 = np.zeros((2,))
+        b2 = b1
+        x = np.array([1.0, 2.0])
+        # assert_allclose(mlp([(w1, b1), (w2, b2)], x), np.array([91.0, 123.0]))
+        # assert_allclose(
+        #     grad(lambda w1: mlp([(w1, b1), (w2, b1)], x))(w1),
+        #     np.array([[12.0, 24.0], [14.0, 28.0]]),
+        # )
+        assert_allclose(
+            grad(lambda w2: mlp([(w1, b1), (w2, b1)], x))(w1),
+            np.array([[4.4364, 11.3673], [4.4364, 11.3673]]),
+        )
+        # assert_allclose(
+        #     grad(lambda b1: mlp([(w1, b1), (w2, b2)], x))(b1), np.array([12.0, 14.0])
+        # )
+        # assert_allclose(
+        #     grad(lambda b2: mlp([(w1, b1), (w2, b2)], x))(b1), np.array([1.0, 1.0])
+        # )
 
 
 class TestMicroJax(unittest.TestCase):
