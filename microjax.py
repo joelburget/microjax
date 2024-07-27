@@ -226,6 +226,12 @@ def grad(fun, argnum=0):
 
         # Construct vector-Jacobian product
         vjp, ans = make_vjp(unary_fun, args[argnum])
+        if isinstance(ans, np.ndarray):
+            if ans.shape != ():
+                raise ValueError(
+                    f"Gradient only defined for scalar-output functions. Output had shape: {ans.shape}"
+                )
+
         return vjp(np.ones_like(ans))
 
     return gradfun
@@ -251,29 +257,40 @@ class Anp:
         self.zeros = primitive(np.zeros)
         self.array = primitive(np.array)
         self.matmul = primitive(np.matmul)
+        self.ndim = primitive(np.ndim)
 
 
 anp = Anp()
 
 
 def matmul_vjp0(g, ans, x, y):
-    rows = g * y.T
-    if rows.shape == x.shape:
-        return rows
-    # TODO: generalize
-    result = np.reshape(rows, (rows.shape[0], 1)) * np.ones(x.shape)
-    print(f"matmul_vjp0 {g=}, {ans=}, {x=}, {y=}, {rows=}, {result=}")
-    return result
+    if max(anp.ndim(x), anp.ndim(y)) > 2:
+        raise NotImplementedError("Current matmul vjps only support ndim <= 2.")
+
+    if anp.ndim(x) == 0:
+        return anp.sum(y * g)
+    if anp.ndim(x) == 1 and anp.ndim(y) == 1:
+        return g * y
+    if anp.ndim(x) == 2 and anp.ndim(y) == 1:
+        return g[:, None] * y
+    if anp.ndim(x) == 1 and anp.ndim(y) == 2:
+        return anp.matmul(y, g)
+    return anp.matmul(g, y.T)
 
 
 def matmul_vjp1(g, ans, x, y):
-    rows = x.T * g
-    if rows.shape == y.shape:
-        return rows
-    # TODO: generalize
-    result = rows.sum(axis=1)
-    print(f"matmul_vjp1 {g=}, {ans=}, {x=}, {y=}, {rows=}, {result=}")
-    return result
+    if max(anp.ndim(x), anp.ndim(y)) > 2:
+        raise NotImplementedError("Current matmul vjps only support ndim <= 2.")
+
+    if anp.ndim(y) == 0:
+        return anp.sum(x * g)
+    if anp.ndim(x) == 1 and anp.ndim(y) == 1:
+        return g * x
+    if anp.ndim(x) == 2 and anp.ndim(y) == 1:
+        return anp.matmul(g, x)
+    if anp.ndim(x) == 1 and anp.ndim(y) == 2:
+        return x[:, None] * g
+    return anp.matmul(x.T, g)
 
 
 primitive_vjps = {
@@ -447,14 +464,30 @@ class TestNeuron(unittest.TestCase):
 
 class TestLayer(unittest.TestCase):
     def test_value_and_grad(self):
+        w = np.array([1.0, 2.0])
+        b = 0.0
+        x = np.ones((2,))
+        assert_allclose(layer(w, b, x), 3.0)
+        assert_allclose(grad(lambda w: layer(w, b, x))(w), np.array([1.0, 1.0]))
+        assert_allclose(grad(lambda b: layer(w, b, x))(b), 1.0)
+
         w = np.array([[1.0, 2.0], [3.0, 4.0]])
         b = np.zeros((2,))
-        x = np.ones((2,))
-        assert_allclose(layer(w, b, x), np.array([3.0, 7.0]))
+
         assert_allclose(
-            grad(lambda w: layer(w, b, x))(w), np.array([[1.0, 1.0], [1.0, 1.0]])
+            grad(lambda w: w @ np.array([1.0, -1.0]))(np.array([3.0, 7.0])),
+            np.array([1.0, -1.0]),
         )
-        assert_allclose(grad(lambda b: layer(w, b, x))(b), np.array([1.0, 1.0]))
+
+        assert_allclose(
+            grad(lambda w: (w @ x) @ np.array([1.0, -1.0]))(w),
+            np.array([[1.0, 1.0], [-1.0, -1.0]]),
+        )
+
+        assert_allclose(
+            grad(lambda w: layer(w, b, x) @ np.array([1.0, -1.0]))(w),
+            np.array([[1.0, 1.0], [-1.0, -1.0]]),
+        )
 
 
 class TestMLP(unittest.TestCase):
@@ -464,21 +497,26 @@ class TestMLP(unittest.TestCase):
         b1 = np.zeros((2,))
         b2 = b1
         x = np.array([1.0, 2.0])
-        # assert_allclose(mlp([(w1, b1), (w2, b2)], x), np.array([91.0, 123.0]))
-        # assert_allclose(
-        #     grad(lambda w1: mlp([(w1, b1), (w2, b1)], x))(w1),
-        #     np.array([[12.0, 24.0], [14.0, 28.0]]),
-        # )
+        assert_allclose(mlp([(w1, b1), (w2, b2)], x), np.array([91.0, 123.0]))
         assert_allclose(
-            grad(lambda w2: mlp([(w1, b1), (w2, b1)], x))(w1),
-            np.array([[4.4364, 11.3673], [4.4364, 11.3673]]),
+            grad(lambda w1: mlp([(w1, b1)], x) @ np.array([1.0, -1.0]))(w1),
+            np.array([[1.0, 2.0], [-1.0, -2.0]]),
         )
-        # assert_allclose(
-        #     grad(lambda b1: mlp([(w1, b1), (w2, b2)], x))(b1), np.array([12.0, 14.0])
-        # )
-        # assert_allclose(
-        #     grad(lambda b2: mlp([(w1, b1), (w2, b2)], x))(b1), np.array([1.0, 1.0])
-        # )
+
+        assert_allclose(
+            grad(lambda w2: mlp([(w1, b1), (w2, b2)], x) @ np.array([1.0, -1.0]))(w1),
+            np.array([[5.0, 11.0], [-5.0, -11.0]]),
+        )
+
+        assert_allclose(
+            grad(lambda b1: mlp([(w1, b1), (w2, b2)], x) @ np.array([1.0, -1.0]))(b1),
+            np.array([-2.0, -2.0]),
+        )
+
+        assert_allclose(
+            grad(lambda b2: mlp([(w1, b1), (w2, b2)], x) @ np.array([1.0, -1.0]))(b1),
+            np.array([1.0, -1.0]),
+        )
 
 
 class TestMicroJax(unittest.TestCase):
