@@ -51,7 +51,7 @@ def trace(start_node, fun, x):
         trace_id -= 1
 
 
-class Node(object):
+class Node:
     """A node in a computation graph."""
 
     def __init__(self, value, fun, args, kwargs, parent_argnums, parents):
