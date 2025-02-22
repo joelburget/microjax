@@ -551,20 +551,21 @@ class TestMicroJax(unittest.TestCase):
         self.assertAlmostEqual(np.cosh(0.0), 1.0)
 
     def test_grad_negative(self):
-        self.assertAlmostEqual(grad(np.negative)(1.0), -1.0)
-        self.assertAlmostEqual(grad(grad(np.negative))(1.0), 0.0)
-        self.assertAlmostEqual(grad(grad(grad(np.negative)))(1.0), 0.0)
-        self.assertAlmostEqual(grad(grad(grad(grad(np.negative))))(1.0), 0.0)
+        f = grad(np.negative)
+        self.assertAlmostEqual(f(1.0), -1.0)
+        for _ in range(10):
+            f = grad(f)
+            self.assertAlmostEqual(f(1.0), 0.0)
 
     def test_grad_tanh(self):
         self.assertAlmostEqual(grad(np.tanh)(0.0), 1.0)
         self.assertAlmostEqual(grad(grad(np.tanh))(0.0), 0.0)
 
     def test_grad_exp(self):
-        self.assertAlmostEqual(grad(np.exp)(1.0), math.e)
-        self.assertAlmostEqual(grad(grad(np.exp))(1.0), math.e)
-        self.assertAlmostEqual(grad(grad(grad(np.exp)))(1.0), math.e)
-        self.assertAlmostEqual(grad(grad(grad(grad(np.exp))))(1.0), math.e)
+        f = np.exp
+        for _ in range(10):
+            self.assertAlmostEqual(grad(f)(1.0), math.e)
+            f = grad(f)
 
     def test_relu(self):
         self.assertAlmostEqual(relu(1.0), 1.0)
