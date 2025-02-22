@@ -1,6 +1,9 @@
+from dataclasses import dataclass
+from typing import Any, Callable
+
 import numpy
-import unittest
 import math
+import unittest
 
 
 def toposort(end_node):
@@ -51,33 +54,29 @@ def trace(start_node, fun, x):
         trace_id -= 1
 
 
-class Node:
-    """A node in a computation graph."""
+@dataclass(frozen=True)
+class Node[T]:
+    """A node in a computation graph.
 
-    def __init__(self, value, fun, args, kwargs, parent_argnums, parents):
-        """
+    parents and argnums should be the same length. There is one for each boxed argument.
+    args could be longer if there are non-Box arguments.
+    """
 
-        Args:
-          value: output of fun(*args, **kwargs)
-          fun: wrapped numpy that was applied.
-          args: all (unboxed) positional arguments.
-          kwargs: dict of additional keyword args.
-          parent_argnums: integers corresponding to positional indices of boxed
-            values.
-          parents: Node instances corresponding to parent_argnums.
-        """
-        self.parents = parents
-        self.recipe = (fun, value, args, kwargs, parent_argnums)
+    parents: tuple["Node[T]"]  # For each boxed argument, the node that produced it.
+    value: T  # The output of the primitive function.
+    fun: Callable[..., T]  # Wrapped primitive function
+    args: tuple[Any]  # All (unboxed) positional arguments
+    kwargs: dict[str, Any]  # Additional keyword arguments
+    argnums: tuple[int]  # Positional indices of boxed values
 
-    def initialize_root(self):
-        self.parents = []
-        self.recipe = (lambda x: x, None, (), {}, [])
+    @staticmethod
+    def new_root():
+        global trace_id
+        return Node((), None, lambda x: x, (), {}, ())
 
-    @classmethod
-    def new_root(cls, *args, **kwargs):
-        root = cls.__new__(cls)
-        root.initialize_root(*args, **kwargs)
-        return root
+    # We have to override hash because dicts aren't hashable.
+    def __hash__(self):
+        return id(self)
 
 
 def primitive(f_raw):
@@ -85,7 +84,7 @@ def primitive(f_raw):
     invocation can be recorded."""
 
     def f_wrapped(*args, **kwargs):
-        # Fetch boxed arguments with largest trace_id.  This ensures that the
+        # Fetch boxed arguments with largest trace_id. This ensures that the
         # computational graph being constructed only consists of other nodes
         # from the same call to trace().
         boxed_args, trace_id = find_top_boxed_args(args)
@@ -104,13 +103,14 @@ def primitive(f_raw):
             #
             # Note that we use a recursive call here in order to also augment
             # outer calls to trace() with lower trace_ids.
-            ans = f_wrapped(*argvals, **kwargs)
+            raw_result = f_wrapped(*argvals, **kwargs)
 
-            # Create a new node
-            node = Node(ans, f_wrapped, argvals, kwargs, argnums, parents)
-            return Box(ans, trace_id, node)
+            node = Node(parents, raw_result, f_wrapped, argvals, kwargs, argnums)
+            return Box(raw_result, trace_id, node)
         else:
             return f_raw(*args, **kwargs)
+
+    f_wrapped.__name__ = f_raw.__name__
 
     return f_wrapped
 
@@ -160,7 +160,6 @@ def make_vjp(fun, x):
 
         def vjp(g):
             return numpy.zeros_like(x)
-
     else:
 
         def vjp(g):
@@ -178,15 +177,14 @@ def backward_pass(g, end_node):
     outgrads = {end_node: g}
     for node in toposort(end_node):
         outgrad = outgrads.pop(node)
-        fun, value, args, kwargs, argnums = node.recipe
-        for argnum, parent in zip(argnums, node.parents):
+        for argnum, parent in zip(node.argnums, node.parents):
             # Lookup vector-Jacobian product (gradient) function for this
             # function/argument.
-            vjp = primitive_vjps[fun][argnum]
+            vjp = primitive_vjps[node.fun][argnum]
 
             # Compute vector-Jacobian product (gradient) contribution due to
             # parent node's use in this function.
-            parent_grad = vjp(outgrad, value, *args, **kwargs)
+            parent_grad = vjp(outgrad, node.value, *node.args, **node.kwargs)
 
             # Save vector-Jacobian product (gradient) for upstream nodes.
             # Sum contributions with all others also using parent's output.
@@ -560,6 +558,7 @@ class TestMicroJax(unittest.TestCase):
     def test_grad_tanh(self):
         self.assertAlmostEqual(grad(np.tanh)(0.0), 1.0)
         self.assertAlmostEqual(grad(grad(np.tanh))(0.0), 0.0)
+        self.assertAlmostEqual(grad(grad(grad(np.tanh)))(0.0), -2.0)
 
     def test_grad_exp(self):
         f = np.exp
