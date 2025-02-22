@@ -1,4 +1,4 @@
-import numpy as np
+import numpy
 import unittest
 import math
 
@@ -159,7 +159,7 @@ def make_vjp(fun, x):
     if end_node is None:
 
         def vjp(g):
-            return np.zeros_like(x)
+            return numpy.zeros_like(x)
 
     else:
 
@@ -201,6 +201,21 @@ def add_outgrads(prev_g, g):
     return prev_g + g
 
 
+def jacobian(fun, argnum=0):
+    """Compute Jacobian of fun at x."""
+
+    def jacfun(*args, **kwargs):
+        def unary_fun(x):
+            new_args = list(args)
+            new_args[argnum] = x
+            return fun(*new_args, **kwargs)
+
+        vjp, ans = make_vjp(unary_fun, args[argnum])
+        return vjp(numpy.ones_like(ans))
+
+    return jacfun
+
+
 def grad(fun, argnum=0):
     """Constructs gradient function.
 
@@ -226,107 +241,107 @@ def grad(fun, argnum=0):
 
         # Construct vector-Jacobian product
         vjp, ans = make_vjp(unary_fun, args[argnum])
-        if isinstance(ans, np.ndarray):
+        if isinstance(ans, numpy.ndarray):
             if ans.shape != ():
                 raise ValueError(
                     f"Gradient only defined for scalar-output functions. Output had shape: {ans.shape}"
                 )
 
-        return vjp(np.ones_like(ans))
+        return vjp(numpy.ones_like(ans))
 
     return gradfun
 
 
-class Anp:
+class Np:
     def __init__(self):
-        self.negative = primitive(np.negative)
-        self.exp = primitive(np.exp)
-        self.log = primitive(np.log)
-        self.tanh = primitive(np.tanh)
-        self.sinh = primitive(np.sinh)
-        self.cosh = primitive(np.cosh)
-        self.multiply = primitive(np.multiply)
-        self.add = primitive(np.add)
-        self.subtract = primitive(np.subtract)
-        self.abs = primitive(np.abs)
-        self.true_divide = primitive(np.true_divide)
+        self.negative = primitive(numpy.negative)
+        self.exp = primitive(numpy.exp)
+        self.log = primitive(numpy.log)
+        self.tanh = primitive(numpy.tanh)
+        self.sinh = primitive(numpy.sinh)
+        self.cosh = primitive(numpy.cosh)
+        self.multiply = primitive(numpy.multiply)
+        self.add = primitive(numpy.add)
+        self.subtract = primitive(numpy.subtract)
+        self.abs = primitive(numpy.abs)
+        self.true_divide = primitive(numpy.true_divide)
         self.divide = self.true_divide
-        self.sign = primitive(np.sign)
-        self.power = primitive(np.power)
-        self.where = primitive(np.where)
-        self.zeros = primitive(np.zeros)
-        self.array = primitive(np.array)
-        self.matmul = primitive(np.matmul)
-        self.ndim = primitive(np.ndim)
+        self.sign = primitive(numpy.sign)
+        self.power = primitive(numpy.power)
+        self.where = primitive(numpy.where)
+        self.zeros = primitive(numpy.zeros)
+        self.array = primitive(numpy.array)
+        self.matmul = primitive(numpy.matmul)
+        self.ndim = primitive(numpy.ndim)
 
 
-anp = Anp()
+np = Np()
 
 
 def matmul_vjp0(g, ans, x, y):
-    if max(anp.ndim(x), anp.ndim(y)) > 2:
+    if max(np.ndim(x), np.ndim(y)) > 2:
         raise NotImplementedError("Current matmul vjps only support ndim <= 2.")
 
-    if anp.ndim(x) == 0:
-        return anp.sum(y * g)
-    if anp.ndim(x) == 1 and anp.ndim(y) == 1:
+    if np.ndim(x) == 0:
+        return np.sum(y * g)
+    if np.ndim(x) == 1 and np.ndim(y) == 1:
         return g * y
-    if anp.ndim(x) == 2 and anp.ndim(y) == 1:
+    if np.ndim(x) == 2 and np.ndim(y) == 1:
         return g[:, None] * y
-    if anp.ndim(x) == 1 and anp.ndim(y) == 2:
-        return anp.matmul(y, g)
-    return anp.matmul(g, y.T)
+    if np.ndim(x) == 1 and np.ndim(y) == 2:
+        return np.matmul(y, g)
+    return np.matmul(g, y.T)
 
 
 def matmul_vjp1(g, ans, x, y):
-    if max(anp.ndim(x), anp.ndim(y)) > 2:
+    if max(np.ndim(x), np.ndim(y)) > 2:
         raise NotImplementedError("Current matmul vjps only support ndim <= 2.")
 
-    if anp.ndim(y) == 0:
-        return anp.sum(x * g)
-    if anp.ndim(x) == 1 and anp.ndim(y) == 1:
+    if np.ndim(y) == 0:
+        return np.sum(x * g)
+    if np.ndim(x) == 1 and np.ndim(y) == 1:
         return g * x
-    if anp.ndim(x) == 2 and anp.ndim(y) == 1:
-        return anp.matmul(g, x)
-    if anp.ndim(x) == 1 and anp.ndim(y) == 2:
+    if np.ndim(x) == 2 and np.ndim(y) == 1:
+        return np.matmul(g, x)
+    if np.ndim(x) == 1 and np.ndim(y) == 2:
         return x[:, None] * g
-    return anp.matmul(x.T, g)
+    return np.matmul(x.T, g)
 
 
 primitive_vjps = {
-    anp.negative: {0: lambda g, ans, x: -g},
-    anp.multiply: {
+    np.negative: {0: lambda g, ans, x: -g},
+    np.multiply: {
         0: lambda g, ans, x, y: y * g,
         1: lambda g, ans, x, y: x * g,
     },
-    anp.exp: {0: lambda g, ans, x: ans * g},
-    anp.log: {0: lambda g, ans, x: g / x},
-    anp.tanh: {0: lambda g, ans, x: g / anp.cosh(x) ** 2},
-    anp.sinh: {0: lambda g, ans, x: g * anp.cosh(x)},
-    anp.cosh: {0: lambda g, ans, x: g * anp.sinh(x)},
-    anp.divide: {
+    np.exp: {0: lambda g, ans, x: ans * g},
+    np.log: {0: lambda g, ans, x: g / x},
+    np.tanh: {0: lambda g, ans, x: g / np.cosh(x) ** 2},
+    np.sinh: {0: lambda g, ans, x: g * np.cosh(x)},
+    np.cosh: {0: lambda g, ans, x: g * np.sinh(x)},
+    np.divide: {
         0: lambda g, ans, x, y: g / y,
         1: lambda g, ans, x, y: -g * x / y**2,
     },
-    anp.add: {
+    np.add: {
         0: lambda g, ans, x, y: g,
         1: lambda g, ans, x, y: g,
     },
-    anp.subtract: {
+    np.subtract: {
         0: lambda g, ans, x, y: g,
         1: lambda g, ans, x, y: -g,
     },
-    anp.abs: {0: lambda g, ans, x: g * anp.sign(x)},
-    anp.sign: {0: lambda g, ans, x: 0},
-    anp.power: {
-        0: lambda g, ans, x, y: g * y * x ** anp.where(y, y - 1, 1.0),
-        1: lambda g, ans, x, y: g * anp.log(anp.where(x, x, 1.0)) * x**y,
+    np.abs: {0: lambda g, ans, x: g * np.sign(x)},
+    np.sign: {0: lambda g, ans, x: 0},
+    np.power: {
+        0: lambda g, ans, x, y: g * y * x ** np.where(y, y - 1, 1.0),
+        1: lambda g, ans, x, y: g * np.log(np.where(x, x, 1.0)) * x**y,
     },
-    anp.where: {
-        0: lambda g, ans, c, x=None, y=None: anp.where(c, g, anp.zeros(g.shape)),
-        1: lambda g, ans, c, x=None, y=None: anp.where(c, anp.zeros(g.shape), g),
+    np.where: {
+        0: lambda g, ans, c, x=None, y=None: np.where(c, g, np.zeros(g.shape)),
+        1: lambda g, ans, c, x=None, y=None: np.where(c, np.zeros(g.shape), g),
     },
-    anp.matmul: {
+    np.matmul: {
         0: matmul_vjp0,  # lambda g, ans, x, y: g * y.T,
         1: matmul_vjp1,  # lambda g, ans, x, y: x.T * g,
     },
@@ -338,9 +353,9 @@ def relu(x):
 
 
 class Box:
-    """Box for np.ndarray.
+    """Box for numpy.ndarray.
 
-    Anything you can do with an np.ndarray, you can do with a Box.
+    Anything you can do with an numpy.ndarray, you can do with a Box.
     """
 
     def __init__(self, value, trace_id, node):
@@ -367,64 +382,64 @@ class Box:
     ndim = property(lambda self: self._value.ndim)
     size = property(lambda self: self._value.size)
     dtype = property(lambda self: self._value.dtype)
-    T = property(lambda self: anp.transpose(self))
+    T = property(lambda self: np.transpose(self))
 
     def __len__(self):
         return len(self._value)
 
     def __neg__(self):
-        return anp.negative(self)
+        return np.negative(self)
 
     def __add__(self, other):
-        return anp.add(self, other)
+        return np.add(self, other)
 
     def __sub__(self, other):
-        return anp.subtract(self, other)
+        return np.subtract(self, other)
 
     def __mul__(self, other):
-        return anp.multiply(self, other)
+        return np.multiply(self, other)
 
     def __pow__(self, other):
-        return anp.power(self, other)
+        return np.power(self, other)
 
     def __div__(self, other):
-        return anp.divide(self, other)
+        return np.divide(self, other)
 
     def __mod__(self, other):
-        return anp.mod(self, other)
+        return np.mod(self, other)
 
     def __truediv__(self, other):
-        return anp.true_divide(self, other)
+        return np.true_divide(self, other)
 
     def __matmul__(self, other):
-        return anp.matmul(self, other)
+        return np.matmul(self, other)
 
     def __radd__(self, other):
-        return anp.add(other, self)
+        return np.add(other, self)
 
     def __rsub__(self, other):
-        return anp.subtract(other, self)
+        return np.subtract(other, self)
 
     def __rmul__(self, other):
-        return anp.multiply(other, self)
+        return np.multiply(other, self)
 
     def __rpow__(self, other):
-        return anp.power(other, self)
+        return np.power(other, self)
 
     def __rdiv__(self, other):
-        return anp.divide(other, self)
+        return np.divide(other, self)
 
     def __rmod__(self, other):
-        return anp.mod(other, self)
+        return np.mod(other, self)
 
     def __rtruediv__(self, other):
-        return anp.true_divide(other, self)
+        return np.true_divide(other, self)
 
     def __rmatmul__(self, other):
-        return anp.matmul(other, self)
+        return np.matmul(other, self)
 
     def __abs__(self):
-        return anp.abs(self)
+        return np.abs(self)
 
 
 def neuron(w, b, x, nonlin=True):
@@ -443,107 +458,113 @@ def mlp(layers, x):
 
 
 def assert_allclose(a, b):
-    np.testing.assert_allclose(a, b, rtol=1e-5, atol=0)
+    numpy.testing.assert_allclose(a, b, rtol=1e-5, atol=0)
 
 
 class TestNeuron(unittest.TestCase):
     def test_call(self):
-        w = np.array([[1.0, 2.0]])
+        w = numpy.array([[1.0, 2.0]])
         b = 0.0
-        x = np.array([1.0, 2.0])
-        np.testing.assert_allclose(neuron(w, b, x), np.array([5]))
+        x = numpy.array([1.0, 2.0])
+        numpy.testing.assert_allclose(neuron(w, b, x), numpy.array([5]))
 
     def test_value_and_grad(self):
-        w = np.ones((2,))
+        w = numpy.ones((2,))
         b = 1.0
-        x = np.ones((2,))
+        x = numpy.ones((2,))
         assert_allclose(neuron(w, b, x), 3.0)
-        assert_allclose(grad(lambda w: neuron(w, b, x))(w), np.array([1.0, 1.0]))
-        assert_allclose(grad(lambda b: neuron(w, b, x))(b), np.array([1.0]))
+        assert_allclose(grad(lambda w: neuron(w, b, x))(w), numpy.array([1.0, 1.0]))
+        assert_allclose(grad(lambda b: neuron(w, b, x))(b), numpy.array([1.0]))
 
 
 class TestLayer(unittest.TestCase):
     def test_value_and_grad(self):
-        w = np.array([1.0, 2.0])
+        w = numpy.array([1.0, 2.0])
         b = 0.0
-        x = np.ones((2,))
+        x = numpy.ones((2,))
         assert_allclose(layer(w, b, x), 3.0)
-        assert_allclose(grad(lambda w: layer(w, b, x))(w), np.array([1.0, 1.0]))
+        assert_allclose(grad(lambda w: layer(w, b, x))(w), numpy.array([1.0, 1.0]))
         assert_allclose(grad(lambda b: layer(w, b, x))(b), 1.0)
 
-        w = np.array([[1.0, 2.0], [3.0, 4.0]])
-        b = np.zeros((2,))
+        w = numpy.array([[1.0, 2.0], [3.0, 4.0]])
+        b = numpy.zeros((2,))
 
         assert_allclose(
-            grad(lambda w: w @ np.array([1.0, -1.0]))(np.array([3.0, 7.0])),
-            np.array([1.0, -1.0]),
+            grad(lambda w: w @ numpy.array([1.0, -1.0]))(numpy.array([3.0, 7.0])),
+            numpy.array([1.0, -1.0]),
         )
 
         assert_allclose(
-            grad(lambda w: (w @ x) @ np.array([1.0, -1.0]))(w),
-            np.array([[1.0, 1.0], [-1.0, -1.0]]),
+            grad(lambda w: (w @ x) @ numpy.array([1.0, -1.0]))(w),
+            numpy.array([[1.0, 1.0], [-1.0, -1.0]]),
         )
 
         assert_allclose(
-            grad(lambda w: layer(w, b, x) @ np.array([1.0, -1.0]))(w),
-            np.array([[1.0, 1.0], [-1.0, -1.0]]),
+            grad(lambda w: layer(w, b, x) @ numpy.array([1.0, -1.0]))(w),
+            numpy.array([[1.0, 1.0], [-1.0, -1.0]]),
         )
 
 
 class TestMLP(unittest.TestCase):
     def test_value_and_grad(self):
-        w1 = np.array([[1.0, 2.0], [3.0, 4.0]])
-        w2 = np.array([[5.0, 6.0], [7.0, 8.0]])
-        b1 = np.zeros((2,))
+        w1 = numpy.array([[1.0, 2.0], [3.0, 4.0]])
+        w2 = numpy.array([[5.0, 6.0], [7.0, 8.0]])
+        b1 = numpy.zeros((2,))
         b2 = b1
-        x = np.array([1.0, 2.0])
-        assert_allclose(mlp([(w1, b1), (w2, b2)], x), np.array([91.0, 123.0]))
+        x = numpy.array([1.0, 2.0])
+        assert_allclose(mlp([(w1, b1), (w2, b2)], x), numpy.array([91.0, 123.0]))
         assert_allclose(
-            grad(lambda w1: mlp([(w1, b1)], x) @ np.array([1.0, -1.0]))(w1),
-            np.array([[1.0, 2.0], [-1.0, -2.0]]),
+            grad(lambda w1: mlp([(w1, b1)], x) @ numpy.array([1.0, -1.0]))(w1),
+            numpy.array([[1.0, 2.0], [-1.0, -2.0]]),
         )
 
         assert_allclose(
-            grad(lambda w2: mlp([(w1, b1), (w2, b2)], x) @ np.array([1.0, -1.0]))(w1),
-            np.array([[5.0, 11.0], [-5.0, -11.0]]),
+            grad(lambda w2: mlp([(w1, b1), (w2, b2)], x) @ numpy.array([1.0, -1.0]))(
+                w2
+            ),
+            numpy.array([[5.0, 11.0], [-5.0, -11.0]]),
         )
 
         assert_allclose(
-            grad(lambda b1: mlp([(w1, b1), (w2, b2)], x) @ np.array([1.0, -1.0]))(b1),
-            np.array([-2.0, -2.0]),
+            grad(lambda b1: mlp([(w1, b1), (w2, b2)], x) @ numpy.array([1.0, -1.0]))(
+                b1
+            ),
+            numpy.array([-2.0, -2.0]),
         )
 
         assert_allclose(
-            grad(lambda b2: mlp([(w1, b1), (w2, b2)], x) @ np.array([1.0, -1.0]))(b1),
-            np.array([1.0, -1.0]),
+            grad(lambda b2: mlp([(w1, b1), (w2, b2)], x) @ numpy.array([1.0, -1.0]))(
+                b2
+            ),
+            numpy.array([1.0, -1.0]),
         )
 
 
 class TestMicroJax(unittest.TestCase):
     def test_basic(self):
-        self.assertAlmostEqual(anp.negative(1.0), -1.0)
-        self.assertAlmostEqual(anp.exp(1.0), 2.718281828459045)
-        self.assertAlmostEqual(anp.exp(0.0), 1.0)
-        self.assertAlmostEqual(anp.log(1.0), 0.0)
-        self.assertAlmostEqual(anp.tanh(0.0), 0.0)
-        self.assertAlmostEqual(anp.sinh(0.0), 0.0)
-        self.assertAlmostEqual(anp.cosh(0.0), 1.0)
+        self.assertAlmostEqual(np.negative(1.0), -1.0)
+        self.assertAlmostEqual(np.exp(1.0), 2.718281828459045)
+        self.assertAlmostEqual(np.exp(0.0), 1.0)
+        self.assertAlmostEqual(np.log(1.0), 0.0)
+        self.assertAlmostEqual(np.tanh(0.0), 0.0)
+        self.assertAlmostEqual(np.sinh(0.0), 0.0)
+        self.assertAlmostEqual(np.cosh(0.0), 1.0)
 
     def test_grad_negative(self):
-        self.assertAlmostEqual(grad(anp.negative)(1.0), -1.0)
-        self.assertAlmostEqual(grad(grad(anp.negative))(1.0), 0.0)
-        self.assertAlmostEqual(grad(grad(grad(anp.negative)))(1.0), 0.0)
-        self.assertAlmostEqual(grad(grad(grad(grad(anp.negative))))(1.0), 0.0)
+        self.assertAlmostEqual(grad(np.negative)(1.0), -1.0)
+        self.assertAlmostEqual(grad(grad(np.negative))(1.0), 0.0)
+        self.assertAlmostEqual(grad(grad(grad(np.negative)))(1.0), 0.0)
+        self.assertAlmostEqual(grad(grad(grad(grad(np.negative))))(1.0), 0.0)
 
     def test_grad_tanh(self):
-        self.assertAlmostEqual(grad(anp.tanh)(0.0), 1.0)
-        self.assertAlmostEqual(grad(grad(anp.tanh))(0.0), 0.0)
+        self.assertAlmostEqual(grad(np.tanh)(0.0), 1.0)
+        self.assertAlmostEqual(grad(grad(np.tanh))(0.0), 0.0)
 
     def test_grad_exp(self):
-        self.assertAlmostEqual(grad(anp.exp)(1.0), math.e)
-        self.assertAlmostEqual(grad(grad(anp.exp))(1.0), math.e)
-        self.assertAlmostEqual(grad(grad(grad(anp.exp)))(1.0), math.e)
-        self.assertAlmostEqual(grad(grad(grad(grad(anp.exp))))(1.0), math.e)
+        self.assertAlmostEqual(grad(np.exp)(1.0), math.e)
+        self.assertAlmostEqual(grad(grad(np.exp))(1.0), math.e)
+        self.assertAlmostEqual(grad(grad(grad(np.exp)))(1.0), math.e)
+        self.assertAlmostEqual(grad(grad(grad(grad(np.exp))))(1.0), math.e)
 
     def test_relu(self):
         self.assertAlmostEqual(relu(1.0), 1.0)
