@@ -1,4 +1,4 @@
-# Microjax: Jax is 100 lines (...ish)
+# Microjax: Jax in two classes and six functions
 
 <a target="_blank" href="https://colab.research.google.com/github/joelburget/microjax/blob/main/tutorial.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> or <a href="https://github.com/joelburget/microjax/blob/main/tutorial.ipynb">Read on Github</a>.
 
