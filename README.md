@@ -1,6 +1,6 @@
 # Microjax
 
-<a href="https://github.com/joelburget/microjax/blob/main/tutorial.ipynb">Read on Github</a> or <a target="_blank" href="https://colab.research.google.com/github/joelburget/microjax/blob/main/tutorial.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>.
+<a target="_blank" href="https://colab.research.google.com/github/joelburget/microjax/blob/main/tutorial.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> or <a href="https://github.com/joelburget/microjax/blob/main/tutorial.ipynb">Read on Github</a>.
 
 This is inspired by Andrej Karpathy's [Micrograd](https://github.com/karpathy/micrograd/tree/master), a PyTorch-like library in about 150 lines of code. Despite PyTorch's popularity, I prefer the way Jax works. I think of PyTorch as having a more _object-oriented_ feel, while Micrograd has a more _functional_ feel. I think you'll start to see right away in the preview why that is.
 
