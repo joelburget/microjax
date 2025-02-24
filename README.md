@@ -1,6 +1,6 @@
 # Microjax: JAX in two classes and six functions
 
-<a target="_blank" href="https://colab.research.google.com/github/joelburget/microjax/blob/main/tutorial.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> or <a href="https://github.com/joelburget/microjax/blob/main/tutorial.ipynb">Read on Github</a>.
+<a target="_blank" href="https://colab.research.google.com/github/joelburget/microjax/blob/main/tutorial.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> or <a href="https://github.com/joelburget/microjax/blob/main/tutorial.ipynb">Read on Github</a> (I recommend actually running the notebook, either on your own computer or Colab).
 
 This is inspired by Andrej Karpathy's [Micrograd](https://github.com/karpathy/micrograd/tree/master), a PyTorch-like library in about 150 lines of code. Despite PyTorch's popularity, I prefer the way JAX works because it a more _functional_ style.
 
